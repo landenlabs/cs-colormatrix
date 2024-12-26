@@ -9,6 +9,8 @@
 # windows
 .ipch/
 x64/
+obj/
+bin/
 
 .vs/
 .obj
