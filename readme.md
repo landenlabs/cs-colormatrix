@@ -12,7 +12,7 @@ Updated: 7-Apr-2010
 C# - ColorMatrix v1.4
 ---------------------
 
-![colormatrix](./doc-info/colormatrix48.png)
+![colormatrix](./doc-info/colormatrix.png)
 
 Download:  
 **colormatrix** C# source code and executables (xp32/net3.5):*   
