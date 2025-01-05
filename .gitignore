@@ -9,9 +9,9 @@
 # windows
 .ipch/
 x64/
+**/x64/
 obj/
-bin/
-
+**/obj/
 .vs/
 .obj
 .exe

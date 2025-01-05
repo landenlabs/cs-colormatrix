@@ -1,4 +1,5 @@
-﻿using System.Reflection;
+﻿using System.Resources;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -8,10 +9,10 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyTitle("ColorMatrix")]
 [assembly: AssemblyDescription("Experiment with color matrix effects")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("Dennis Lang 2010")]
+[assembly: AssemblyCompany("LanDen Labs")]
 [assembly: AssemblyProduct("ColorMatrix")]
 [assembly: AssemblyCopyright("Copyright © LanDen Labs 2010")]
-[assembly: AssemblyTrademark("")]
+[assembly: AssemblyTrademark("Dennis Lang")]
 [assembly: AssemblyCulture("")]
 
 // Setting ComVisible to false makes the types in this assembly not visible 
@@ -34,3 +35,4 @@ using System.Runtime.InteropServices;
 // [assembly: AssemblyVersion("1.0.*")]
 [assembly: AssemblyVersion("1.5.0.0")]
 [assembly: AssemblyFileVersion("1.5")]
+[assembly: NeutralResourcesLanguage("en")]
