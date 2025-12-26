@@ -20,7 +20,7 @@
     </xs:element>
   </xs:schema>
   <dt>
-    <Red>1</Red>
+    <Red>0</Red>
     <Green>0</Green>
     <Blue>0</Blue>
     <Alpha>0</Alpha>
@@ -28,23 +28,9 @@
   </dt>
   <dt>
     <Red>0</Red>
-    <Green>1</Green>
+    <Green>-2</Green>
     <Blue>0</Blue>
     <Alpha>0</Alpha>
-    <Int>0</Int>
-  </dt>
-  <dt>
-    <Red>0</Red>
-    <Green>0</Green>
-    <Blue>1</Blue>
-    <Alpha>0</Alpha>
-    <Int>0</Int>
-  </dt>
-  <dt>
-    <Red>0</Red>
-    <Green>0</Green>
-    <Blue>0</Blue>
-    <Alpha>0.5</Alpha>
     <Int>0</Int>
   </dt>
   <dt>
@@ -53,5 +39,19 @@
     <Blue>0</Blue>
     <Alpha>0</Alpha>
     <Int>0</Int>
+  </dt>
+  <dt>
+    <Red>0</Red>
+    <Green>0</Green>
+    <Blue>0</Blue>
+    <Alpha>1</Alpha>
+    <Int>0</Int>
+  </dt>
+  <dt>
+    <Red>0</Red>
+    <Green>2</Green>
+    <Blue>0</Blue>
+    <Alpha>0</Alpha>
+    <Int>1</Int>
   </dt>
 </NewDataSet>

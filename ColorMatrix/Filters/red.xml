@@ -28,23 +28,9 @@
   </dt>
   <dt>
     <Red>0</Red>
-    <Green>1</Green>
-    <Blue>0</Blue>
-    <Alpha>0</Alpha>
-    <Int>0</Int>
-  </dt>
-  <dt>
-    <Red>0</Red>
-    <Green>0</Green>
-    <Blue>1</Blue>
-    <Alpha>0</Alpha>
-    <Int>0</Int>
-  </dt>
-  <dt>
-    <Red>0</Red>
     <Green>0</Green>
     <Blue>0</Blue>
-    <Alpha>0.5</Alpha>
+    <Alpha>0</Alpha>
     <Int>0</Int>
   </dt>
   <dt>
@@ -53,5 +39,19 @@
     <Blue>0</Blue>
     <Alpha>0</Alpha>
     <Int>0</Int>
+  </dt>
+  <dt>
+    <Red>0</Red>
+    <Green>0</Green>
+    <Blue>0</Blue>
+    <Alpha>1</Alpha>
+    <Int>0</Int>
+  </dt>
+  <dt>
+    <Red>0</Red>
+    <Green>0</Green>
+    <Blue>0</Blue>
+    <Alpha>0</Alpha>
+    <Int>1</Int>
   </dt>
 </NewDataSet>

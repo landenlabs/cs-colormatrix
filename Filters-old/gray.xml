@@ -1,57 +1,58 @@
 <?xml version="1.0" standalone="yes"?>
 <NewDataSet>
   <xs:schema id="NewDataSet" xmlns="" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xs:element name="dt">
+      <xs:complexType>
+        <xs:sequence>
+          <xs:element name="Red" type="xs:float" minOccurs="0" />
+          <xs:element name="Green" type="xs:float" minOccurs="0" />
+          <xs:element name="Blue" type="xs:float" minOccurs="0" />
+          <xs:element name="Alpha" type="xs:float" minOccurs="0" />
+          <xs:element name="C4" type="xs:float" minOccurs="0" />
+        </xs:sequence>
+      </xs:complexType>
+    </xs:element>
     <xs:element name="NewDataSet" msdata:IsDataSet="true" msdata:MainDataTable="dt" msdata:UseCurrentLocale="true">
       <xs:complexType>
         <xs:choice minOccurs="0" maxOccurs="unbounded">
-          <xs:element name="dt">
-            <xs:complexType>
-              <xs:sequence>
-                <xs:element name="Red" type="xs:float" minOccurs="0" />
-                <xs:element name="Green" type="xs:float" minOccurs="0" />
-                <xs:element name="Blue" type="xs:float" minOccurs="0" />
-                <xs:element name="Alpha" type="xs:float" minOccurs="0" />
-                <xs:element name="Int" type="xs:float" minOccurs="0" />
-              </xs:sequence>
-            </xs:complexType>
-          </xs:element>
+          <xs:element ref="dt" />
         </xs:choice>
       </xs:complexType>
     </xs:element>
   </xs:schema>
   <dt>
-    <Red>0.36</Red>
-    <Green>0.36</Green>
-    <Blue>0.36</Blue>
+    <Red>0.3</Red>
+    <Green>0.3</Green>
+    <Blue>0.3</Blue>
     <Alpha>0</Alpha>
-    <Int>0</Int>
+    <C4>0</C4>
   </dt>
   <dt>
     <Red>0.58</Red>
     <Green>0.58</Green>
     <Blue>0.58</Blue>
     <Alpha>0</Alpha>
-    <Int>0</Int>
+    <C4>0</C4>
   </dt>
   <dt>
-    <Red>0.18</Red>
-    <Green>0.18</Green>
-    <Blue>0.18</Blue>
+    <Red>0.11</Red>
+    <Green>0.11</Green>
+    <Blue>0.11</Blue>
     <Alpha>0</Alpha>
-    <Int>0</Int>
+    <C4>0</C4>
   </dt>
   <dt>
     <Red>0</Red>
     <Green>0</Green>
     <Blue>0</Blue>
     <Alpha>1</Alpha>
-    <Int>0</Int>
+    <C4>0</C4>
   </dt>
   <dt>
     <Red>0</Red>
     <Green>0</Green>
     <Blue>0</Blue>
     <Alpha>0</Alpha>
-    <Int>1</Int>
+    <C4>1</C4>
   </dt>
 </NewDataSet>

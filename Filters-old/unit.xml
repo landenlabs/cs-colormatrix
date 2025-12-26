@@ -44,7 +44,7 @@
     <Red>0</Red>
     <Green>0</Green>
     <Blue>0</Blue>
-    <Alpha>0.5</Alpha>
+    <Alpha>1</Alpha>
     <Int>0</Int>
   </dt>
   <dt>
@@ -52,6 +52,6 @@
     <Green>0</Green>
     <Blue>0</Blue>
     <Alpha>0</Alpha>
-    <Int>0</Int>
+    <Int>1</Int>
   </dt>
 </NewDataSet>
