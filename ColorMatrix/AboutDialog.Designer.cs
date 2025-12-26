@@ -72,7 +72,7 @@
             this.linkLabel.Size = new System.Drawing.Size(294, 16);
             this.linkLabel.TabIndex = 2;
             this.linkLabel.TabStop = true;
-            this.linkLabel.Text = "https://landenlabs.comindex.html";
+            this.linkLabel.Text = "https://landenlabs.com";
             this.linkLabel.LinkClicked += new System.Windows.Forms.LinkLabelLinkClickedEventHandler(this.linkLabel_LinkClicked);
             // 
             // timer1

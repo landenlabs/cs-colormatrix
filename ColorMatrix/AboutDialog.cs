@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
+using System.Diagnostics;
 
 namespace ColorMatrix_ns {
 	/// <summary>
@@ -27,6 +28,7 @@ namespace ColorMatrix_ns {
 
 		public AboutDialog() {
 			InitializeComponent();
+			/*
 			// Ensure standard dialog border and control box are visible
 			this.FormBorderStyle = FormBorderStyle.FixedDialog;
 			this.ControlBox = true;
@@ -36,6 +38,7 @@ namespace ColorMatrix_ns {
 			this.StartPosition = FormStartPosition.CenterParent;
 			// Disable transparency key for the real dialog so borders aren't accidentally made transparent
 			this.TransparencyKey = Color.Empty;
+			*/
 
 			this.Text =
 				this.label1.Text =
@@ -59,7 +62,7 @@ namespace ColorMatrix_ns {
 
 		protected override void OnShown(EventArgs e) {
 			base.OnShown(e);
-			OpenEffect1();      // See OpenEffect2() for another choice.
+			// OpenEffect1();      // See OpenEffect2() for another choice.
 		}
 
 		private void linkLabel_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e) {
@@ -116,132 +119,202 @@ namespace ColorMatrix_ns {
 			return image;
 		}
 
-
+		// --- animation fields (improved for smoothing) ---
 		Form spinForm;
 		Bitmap image;
-		float rotateAngle = 0.5f;
+		float rotateAngle = 0.0f;
 		Rectangle screenRect;
+		float scale = 1.0f;
+
+		Stopwatch animStopwatch = new Stopwatch();
+		float animDurationSeconds = 2.0f;      // total close animation duration
+		float rotateSpeedDegreesPerSec = 720f; // rotation speed
+		int frameIntervalMs = 15;              // ~60 FPS
+		Image lastBgImage = null;
+
+		// movement
+		const int speed = 5;
+		int xDir = speed;
+		int yDir = speed;
+
+		// Small subclass with double buffering enabled for smooth painting
+		private class SpinForm : Form {
+			public SpinForm() {
+				this.SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true);
+				this.DoubleBuffered = true;
+				this.FormBorderStyle = FormBorderStyle.None;
+			}
+		}
 
 		#region ==== Spin Close effect
 
 		private void CloseSpin() {
+			// Ensure timer has no leftover handlers
+			try {
+				timer1.Stop();
+				timer1.Tick -= new System.EventHandler(this.timer1_Tick);
+				timer1.Tick -= new System.EventHandler(this.timerOpen1_Tick);
+				timer1.Tick -= new System.EventHandler(this.timerOpen2_Tick);
+			} catch { }
+
 			screenRect = Screen.GetWorkingArea(this);
 			image = MakeScreenImage();
-			spinForm = new Form();
-			// spinForm.DoubleBuffered = true;
+			spinForm = new SpinForm();
 			spinForm.AllowTransparency = true;
 			spinForm.Opacity = 1.0;
-			spinForm.FormBorderStyle = FormBorderStyle.None;
 			spinForm.StartPosition = FormStartPosition.Manual;
 
 			int maxDim = Math.Max(image.Width, image.Height);
 			int bigDim = (int)(maxDim * 1.5);
 			this.Visible = false;
-			scale = 1.0f;
-			Size delta = new Size(bigDim - image.Width, bigDim - image.Height);
 
+			Size delta = new Size(bigDim - image.Width, bigDim - image.Height);
 			spinForm.Location = new Point(this.Location.X - delta.Width / 2, this.Location.Y - delta.Height / 2);
-			spinForm.Show();
 			spinForm.Size = new Size(bigDim, bigDim);
 			spinForm.BackColor = Color.DarkGreen;
 			spinForm.TransparencyKey = spinForm.BackColor;
+			spinForm.Show();
 
+			// reset animation state
+			animStopwatch.Restart();
+			rotateAngle = 0f;
+			lastBgImage = null;
+
+			// run timer for smooth frame rate
+			timer1.Interval = frameIntervalMs;
 			this.timer1.Tick += new System.EventHandler(this.timer1_Tick);
 			this.timer1.Start();
 		}
 
-		const int speed = 5;
-		int xDir = speed;
-		int yDir = speed;
-		float scale = 1.0f;
-
 		private void timer1_Tick(object sender, EventArgs e) {
-			spinForm.BackgroundImage = rotateImage(image, spinForm.Size, rotateAngle, scale, null);
+			float elapsed = animStopwatch.ElapsedMilliseconds / 1000f;
+			float progress = Math.Min(1f, elapsed / animDurationSeconds);
 
-			rotateAngle += 5.0f;
-			scale -= 0.01f;
-			if (scale < 0.1) {
-				// animation finished - stop timer and actually close the form
+			// time-based values
+			rotateAngle = rotateSpeedDegreesPerSec * elapsed;
+			float scale = 1f - progress; // shrink from 1 -> 0
+			scale = Math.Max(0.01f, scale);
+
+			// create new frame
+			Bitmap frame = rotateImage(image, spinForm.Size, rotateAngle, scale, null);
+
+			// swap background image and dispose previous
+			Image prev = spinForm.BackgroundImage;
+			spinForm.BackgroundImage = frame;
+			if (prev != null && prev != frame) {
+				try { prev.Dispose(); } catch { }
+			}
+
+			// finish condition
+			if (progress >= 1f) {
 				timer1.Stop();
 				this.timer1.Tick -= new System.EventHandler(this.timer1_Tick);
-				spinForm.Close();
-				animClosing = true; // allow the form to close without restarting animation
+				try { spinForm.Close(); } catch { }
+				animClosing = true;
 				this.Close();
 				return;
 			}
 
+			// gentle movement to keep inside screen bounds
+			int moveStep = 3;
 			Rectangle formRect = new Rectangle(spinForm.Location, spinForm.Size);
-			if (screenRect.Contains(formRect) == false) {
-				if (screenRect.Right - formRect.Right < speed)
-					xDir = -speed;
-
-				if (formRect.Left - screenRect.Left < speed)
-					xDir = speed;
-
-				if (formRect.Top - screenRect.Top < speed)
-					yDir = speed;
-
-				if (screenRect.Bottom - formRect.Bottom < speed)
-					yDir = -speed;
-
-				spinForm.Location = new Point(spinForm.Location.X + xDir, spinForm.Location.Y + yDir);
+			if (!screenRect.Contains(formRect)) {
+				if (screenRect.Right - formRect.Right < moveStep) xDir = -moveStep;
+				if (formRect.Left - screenRect.Left < moveStep) xDir = moveStep;
+				if (formRect.Top - screenRect.Top < moveStep) yDir = moveStep;
+				if (screenRect.Bottom - formRect.Bottom < moveStep) yDir = -moveStep;
 			}
 			spinForm.Location = new Point(spinForm.Location.X + xDir, spinForm.Location.Y + yDir);
 		}
 		#endregion
 
 		#region ==== Spin open effect#1
+		private float open1DurationSeconds = 0.8f;
+		private float open2DurationSeconds = 1.0f;
+
 		private void OpenEffect1() {
+			// Ensure timer has no leftover handlers
+			try {
+				timer1.Stop();
+				timer1.Tick -= new System.EventHandler(this.timer1_Tick);
+				timer1.Tick -= new System.EventHandler(this.timerOpen1_Tick);
+				// timer1.Tick -= new System.EventHandler(this.timerOpen2_Tick);
+			} catch { }
+
 			this.Visible = false;
 			this.Size = new Size(350, 300);
 			image = MakeScreenImage();
-			spinForm = new Form();
+			spinForm = new SpinForm();
 			spinForm.AllowTransparency = true;
 			spinForm.Opacity = 1.0;
-			spinForm.FormBorderStyle = FormBorderStyle.None;
 			spinForm.StartPosition = FormStartPosition.CenterParent;
 
 			int maxDim = Math.Max(image.Width, image.Height);
 			int bigDim = (int)(maxDim * 1.5);
-			scale = 0;
-			rotateAngle = 0;
 			Size delta = new Size(bigDim - image.Width, bigDim - image.Height);
 
-			// spinForm.Location = new Point(this.Location.X - delta.Width / 2, this.Location.Y - delta.Height / 2);
 			spinForm.Size = new Size(bigDim, bigDim);
 			spinForm.BackColor = Color.DarkGreen;
 			spinForm.TransparencyKey = spinForm.BackColor;
 			spinForm.Show();
-			this.Visible = false;
-			this.timer1.Tick += new System.EventHandler(this.timer2_Tick);
+
+			// reset animation state
+			animStopwatch.Restart();
+			rotateAngle = 0f;
+
+			// run timer for smooth frame rate
+			timer1.Interval = frameIntervalMs;
+			this.timer1.Tick += new System.EventHandler(this.timerOpen1_Tick);
 			this.timer1.Start();
 		}
 
-		private void timer2_Tick(object sender, EventArgs e) {
-			float scaleStep = (5 / 360.0f);
-			if (scale >= 1) {
-				timer1.Stop();
-				this.timer1.Tick -= new System.EventHandler(this.timer2_Tick);
+		private void timerOpen1_Tick(object sender, EventArgs e) {
+			float elapsed = animStopwatch.ElapsedMilliseconds / 1000f;
+			float progress = Math.Min(1f, elapsed / open1DurationSeconds);
 
+			rotateAngle = rotateSpeedDegreesPerSec * elapsed;
+			float localScale = progress; // 0 -> 1
+			localScale = Math.Max(0.01f, localScale);
+
+			// create new frame
+			Bitmap frame = rotateImage(image, spinForm.Size, rotateAngle, localScale, null);
+
+			// swap background image and dispose previous
+			Image prev = spinForm.BackgroundImage;
+			spinForm.BackgroundImage = frame;
+			if (prev != null && prev != frame) {
+				try { prev.Dispose(); } catch { }
+			}
+
+			if (progress >= 1f) {
+				timer1.Stop();
+				this.timer1.Tick -= new System.EventHandler(this.timerOpen1_Tick);
+
+				// center real form on spinForm and show
 				this.Location = new Point(spinForm.Location.X + (spinForm.Width - image.Width) / 2,
 					spinForm.Location.Y + (spinForm.Height - image.Height) / 2);
 
-				spinForm.Close();
+				try { spinForm.Close(); } catch { }
 				this.Visible = true;
-			} else
-				scale += scaleStep;
-			spinForm.BackgroundImage = rotateImage(image, spinForm.Size, rotateAngle, scale, null);
-			rotateAngle += 5.0f;
+				return;
+			}
 		}
 		#endregion
 
 		#region ==== Spin open effect#2
 		private void OpenEffect2() {
-			// Grab screen shot of dialog (view, snap, hide)
+			// Ensure timer has no leftover handlers
+			try {
+				timer1.Stop();
+				timer1.Tick -= new System.EventHandler(this.timer1_Tick);
+				timer1.Tick -= new System.EventHandler(this.timerOpen1_Tick);
+				//timer1.Tick -= new System.EventHandler(this.timerOpen2_Tick);
+			} catch { }
+
 			image = MakeScreenImage();
 
 			// Build dummy form to hold spinning image
-			spinForm = new Form();
+			spinForm = new SpinForm();
 			spinForm.AllowTransparency = true;
 			spinForm.Opacity = 1.0;
 			spinForm.FormBorderStyle = FormBorderStyle.None;
@@ -250,64 +323,74 @@ namespace ColorMatrix_ns {
 			int maxDim = Math.Max(image.Width, image.Height);
 			int bigDim = (int)(maxDim * 1.5);
 
-			Size delta = new Size(bigDim - image.Width, bigDim - image.Height);
-
 			spinForm.StartPosition = FormStartPosition.CenterParent;
-			// spinForm.Location = new Point(this.Location.X - delta.Width / 2, this.Location.Y - delta.Height / 2);
 			spinForm.Size = new Size(bigDim, bigDim);
 			spinForm.BackColor = Color.DarkGreen;
 			spinForm.TransparencyKey = spinForm.BackColor;
-			spinForm.BackgroundImage = new Bitmap(image.Width, image.Height, image.PixelFormat);
 			spinForm.Show();
 
-			scale = 0;
-			rotateAngle = 0;
-
-			this.timer1.Tick += new System.EventHandler(this.timer3_Tick);
+			// reset animation state
+			animStopwatch.Restart();
+			rotateAngle = 0f;
+			// run timer
+			timer1.Interval = frameIntervalMs;
+			this.timer1.Tick += new System.EventHandler(this.timerOpen2_Tick);
 			this.timer1.Start();
 		}
 
-		private void timer3_Tick(object sender, EventArgs e) {
-			if (rotateAngle >= 360) {
-				// Full size - stop timer, hide dummy form, make real form visible.
-				timer1.Stop();
-				this.timer1.Tick -= new System.EventHandler(this.timer3_Tick);
-				spinForm.Close();
-				this.Visible = true;
-			} else
-				scale += (float)(5 / 360.0);
+		private void timerOpen2_Tick(object sender, EventArgs e) {
+			float elapsed = animStopwatch.ElapsedMilliseconds / 1000f;
+			float progress = Math.Min(1f, elapsed / open2DurationSeconds);
 
-			spinForm.BackgroundImage = rotateImage(image, spinForm.Size, rotateAngle, scale, spinForm.BackgroundImage);
-			rotateAngle += 5.0f;
+			rotateAngle = rotateSpeedDegreesPerSec * elapsed;
+			float localScale = progress; // 0 -> 1
+			localScale = Math.Max(0.01f, localScale);
+
+			Bitmap frame = rotateImage(image, spinForm.Size, rotateAngle, localScale, spinForm.BackgroundImage);
+
+			Image prev = spinForm.BackgroundImage;
+			spinForm.BackgroundImage = frame;
+			if (prev != null && prev != frame) {
+				try { prev.Dispose(); } catch { }
+			}
+
+			if (progress >= 1f) {
+				timer1.Stop();
+				this.timer1.Tick -= new System.EventHandler(this.timerOpen2_Tick);
+				this.Location = new Point(spinForm.Location.X + (spinForm.Width - image.Width) / 2,
+					spinForm.Location.Y + (spinForm.Height - image.Height) / 2);
+				try { spinForm.Close(); } catch { }
+				this.Visible = true;
+				return;
+			}
 		}
 		#endregion
 
 		private Bitmap rotateImage(Bitmap b, Size size, float angle, float scale, Image prevImage) {
 			// Create a new empty bitmap to hold rotated image
-			Bitmap returnBitmap;
-			if (prevImage == null)
-				returnBitmap = new Bitmap(size.Width, size.Height);
-			else
-				returnBitmap = new Bitmap(prevImage, size.Width, size.Height);
+			Bitmap returnBitmap = new Bitmap(size.Width, size.Height);
 
-			// Make a graphics object from the empty bitmap
-			Graphics g = Graphics.FromImage(returnBitmap);
-			if (prevImage == null)
+			using (Graphics g = Graphics.FromImage(returnBitmap)) {
 				g.Clear(Color.Transparent);
-			g.SmoothingMode = SmoothingMode.HighSpeed;
+				g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+				g.SmoothingMode = SmoothingMode.HighQuality;
+				g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+				g.CompositingQuality = CompositingQuality.HighQuality;
 
-			Size deltaSize = size - b.Size;
-			g.TranslateTransform((float)deltaSize.Width / 2, (float)deltaSize.Height / 2);
+				Size deltaSize = size - b.Size;
+				g.TranslateTransform((float)deltaSize.Width / 2, (float)deltaSize.Height / 2);
 
-			// Move rotation point to center of image
-			g.TranslateTransform((float)b.Width / 2, (float)b.Height / 2);
-			// Rotate
-			g.RotateTransform(angle);
-			// Move origin back
-			g.TranslateTransform(-(float)b.Width / 2, -(float)b.Height / 2);
-			// Draw passed in image onto graphics object
-			g.ScaleTransform(scale, scale);
-			g.DrawImage(b, new Point(0, 0));
+				// Move rotation point to center of image
+				g.TranslateTransform((float)b.Width / 2, (float)b.Height / 2);
+				// Rotate
+				g.RotateTransform(angle);
+				// Move origin back
+				g.TranslateTransform(-(float)b.Width / 2, -(float)b.Height / 2);
+				// Draw passed in image onto graphics object
+				g.ScaleTransform(Math.Max(0.01f, scale), Math.Max(0.01f, scale));
+				g.DrawImage(b, new Point(0, 0));
+			}
+
 			return returnBitmap;
 		}
 		#endregion
