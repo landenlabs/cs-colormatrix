@@ -8,8 +8,8 @@
 # Windows VisualStudio
 # windows
 .ipch/
-x64/
-**/x64/
+bin/
+**/bin/
 obj/
 **/obj/
 .vs/

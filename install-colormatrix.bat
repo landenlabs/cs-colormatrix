@@ -1,7 +1,7 @@
 @echo off
 
 @rem Optional define bindir and msbuild if not current set correctly. 
-call dev-setup.bat
+call ..\dev-setup.bat
 
 set prog=ColorMatrix
 set reldeb=Debug
@@ -27,7 +27,7 @@ if not exist "bin\%reldeb%\%prog%.exe" (
  
 @echo ---- Copy %reldeb% to %bindir%
 copy  bin\%reldeb%\%prog%.exe %bindir%\%prog%.exe
-ld -hp   bin\%reldeb%\%prog%.exe %bindir%\%prog%.exe
+%dir%   bin\%reldeb%\%prog%.exe %bindir%\%prog%.exe
 
 @rem play happy tone
 rundll32.exe cmdext.dll,MessageBeepStub
