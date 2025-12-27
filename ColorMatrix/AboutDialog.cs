@@ -124,13 +124,11 @@ namespace ColorMatrix_ns {
 		Bitmap image;
 		float rotateAngle = 0.0f;
 		Rectangle screenRect;
-		float scale = 1.0f;
 
 		Stopwatch animStopwatch = new Stopwatch();
 		float animDurationSeconds = 2.0f;      // total close animation duration
 		float rotateSpeedDegreesPerSec = 720f; // rotation speed
 		int frameIntervalMs = 15;              // ~60 FPS
-		Image lastBgImage = null;
 
 		// movement
 		const int speed = 5;
@@ -178,7 +176,6 @@ namespace ColorMatrix_ns {
 			// reset animation state
 			animStopwatch.Restart();
 			rotateAngle = 0f;
-			lastBgImage = null;
 
 			// run timer for smooth frame rate
 			timer1.Interval = frameIntervalMs;

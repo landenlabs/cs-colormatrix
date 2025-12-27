@@ -2,7 +2,7 @@
 
 set prog=ColorMatrix
 
-call dev-setup.bat
+call ..\dev-setup.bat
 
 cd %prog% 
  

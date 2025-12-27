@@ -34,7 +34,7 @@ namespace ColorMatrix_ns {
 		public MainForm() {
 			this.filterGrid = new FilterGrid("", this.BackColor);
 			InitializeComponent();
-			this.title.Text = this.Text = "ColorMatrix v" + Application.ProductVersion + " By:DLang 2010";
+			this.title.Text = this.Text = "ColorMatrix v" + Application.ProductVersion + " By:DLang 2025";
 
 			// Adjust various parts of the UI
 			ipanel1.Buttons = ImagePanel.ButtonSet.Load;
@@ -83,7 +83,7 @@ namespace ColorMatrix_ns {
 					LoadFilterGridFlow(fileInfo.FullName);
 				}
 			} catch (Exception ex) {
-				MessageBox.Show(ex.Message);
+				// MessageBox.Show(ex.Message);
 			}
 		}
 
@@ -177,13 +177,13 @@ namespace ColorMatrix_ns {
 						}
 
 					} catch (Exception ex) {
-						MessageBox.Show(ex.Message);
+						MessageBox.Show("Load filter " + ex.Message);
 					}
 				}
 
 				return;
 			} catch (Exception ex) {
-				MessageBox.Show(ex.Message);
+				MessageBox.Show("Load filters " + ex.Message);
 			}
 
 			// Legacy: attempt to treat stream as a GZip of a simple length-prefixed sequence (label, xml table, png image)
@@ -369,7 +369,7 @@ namespace ColorMatrix_ns {
 					Image image = Bitmap.FromFile(loadImageDialog.FileName);
 					return image;
 				} catch (Exception ex) {
-					MessageBox.Show(ex.Message);
+					MessageBox.Show("LoadImage " + ex.Message);
 				}
 			}
 
@@ -383,7 +383,7 @@ namespace ColorMatrix_ns {
 					Image image = ipanel.Image;
 					image.Save(saveImageDialog.FileName);
 				} catch (Exception ex) {
-					MessageBox.Show(ex.Message);
+					MessageBox.Show("save " + ex.Message);
 				}
 			}
 		}
@@ -407,7 +407,7 @@ namespace ColorMatrix_ns {
 					m_dt.WriteXml(filename, XmlWriteMode.WriteSchema);
 					ipanel3.Image.Save(Path.ChangeExtension(filename, ".png"));
 				} catch (Exception ex) {
-					MessageBox.Show(ex.Message);
+					MessageBox.Show("Save filter " + ex.Message);
 				}
 			}
 		}
@@ -495,10 +495,10 @@ namespace ColorMatrix_ns {
 					Image image = Bitmap.FromFile(Path.ChangeExtension(filename, ".png"));
 					fg.Image = image;
 				} catch (Exception ex) {
-					MessageBox.Show(ex.Message);
+					MessageBox.Show("Load filter image " + ex.Message);
 				}
-			} catch (Exception ex) {
-				MessageBox.Show(ex.Message);
+			} catch /* (Exception ex) */ {
+				// MessageBox.Show("Load filter grid " + ex.Message);
 			}
 
 			return fg;

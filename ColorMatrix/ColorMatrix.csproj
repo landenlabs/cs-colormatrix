@@ -7,6 +7,25 @@
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <UseWindowsForms>true</UseWindowsForms>
     <ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
+    <!-- Publish settings to produce a single-file standalone executable -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+
+	  <!--
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+	-->
+  
+    <!-- Keep trimming off by default for WinForms stability; enable only after testing -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <!-- Native libraries extraction ensures native WinForms/Windows dependencies are available -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Optional: ReadyToRun improves startup performance for published app -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+
+    <!-- Restrict built satellite/resource assemblies to English only -->
+    <NeutralResourcesLanguage>en</NeutralResourcesLanguage>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
   <ItemGroup>
     <Reference Update="System.Core">
