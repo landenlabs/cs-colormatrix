@@ -1,69 +1,42 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
-    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
     <RootNamespace>ColorMatrix_ns</RootNamespace>
-    <ApplicationIcon>ColorMatrix48.ico</ApplicationIcon>
-    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <OutputType>WinExe</OutputType>
     <UseWindowsForms>true</UseWindowsForms>
-    <ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
-    <!-- Publish settings to produce a single-file standalone executable -->
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-
-	  <!--
-    <SelfContained>true</SelfContained>
+	  
     <PublishSingleFile>true</PublishSingleFile>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-	-->
-  
-    <!-- Keep trimming off by default for WinForms stability; enable only after testing -->
+	  
+	<!-- App run will require user OS has .NET 9 installed -->
+    <SelfContained>false</SelfContained>
+	  
     <PublishTrimmed>false</PublishTrimmed>
-    <!-- Native libraries extraction ensures native WinForms/Windows dependencies are available -->
+    <TrimMode>partial</TrimMode> 
+	
+    <PublishAot>false</PublishAot>
+    
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <!-- Optional: ReadyToRun improves startup performance for published app -->
-    <PublishReadyToRun>true</PublishReadyToRun>
-
-    <!-- Restrict built satellite/resource assemblies to English only -->
+    
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+	  
+	<!-- Agressive exe size reduction -->
+	<!--
+	<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+	<DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+	-->
     <NeutralResourcesLanguage>en</NeutralResourcesLanguage>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
-  <ItemGroup>
-    <Reference Update="System.Core">
-      <RequiredTargetFramework>3.5</RequiredTargetFramework>
-    </Reference>
-    <Reference Update="System.Xml.Linq">
-      <RequiredTargetFramework>3.5</RequiredTargetFramework>
-    </Reference>
-    <PackageReference Include="System.Data.DataSetExtensions" Version="4.5.0" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Update="FilterGrid.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Update="ImagePanel.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Update="Properties\Settings.Designer.cs">
-      <DesignTimeSharedInput>True</DesignTimeSharedInput>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>Settings.settings</DependentUpon>
-    </Compile>
-  </ItemGroup>
+
   <ItemGroup>
     <EmbeddedResource Include="filters.gzip" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="ColorMatrix48.ico" />
-    <Content Include="Resources\background.png" />
-    <Content Include="Resources\image1.png" />
-    <Content Include="Resources\image2.png" />
-    <Content Include="Resources\lr20.png" />
     <EmbeddedResource Include="colormatrix.html" />
   </ItemGroup>
+
   <ItemGroup>
-    <None Update="Properties\Settings.settings">
-      <Generator>SettingsSingleFileGenerator</Generator>
-      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
-    </None>
-  </ItemGroup>
+    <Content Include="ColorMatrix48.ico" />
+    <Content Include="Resources\*.png" />
+ </ItemGroup>
+
 </Project>

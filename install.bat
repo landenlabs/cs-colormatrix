@@ -21,10 +21,12 @@ rmdir /s bin  2> nul
 
 @echo.
 @echo ---- Build %reldeb% %prog% 
-@rem with the .NET CLI wrapper (recommended): 
-@rem dotnet msbuild -t:Publish -p:Configuration=Release -p:RuntimeIdentifier=win-x64 -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true
-%msbuild% %prog%.sln -m -p:Configuration="%reldeb%";RuntimeIdentifier=win-x64 -verbosity:minimal  -detailedSummary:True /restore
-set blddir=bin\%reldeb%\net10.0-windows\win-x64
+@rem powershell -NoProfile -ExecutionPolicy Bypass -File .\make-filters-zip.ps1
+
+dotnet publish -c %reldeb% -r win-x64
+@rem dotnet publish -c %reldeb% -r win-x64 --self-contained false /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true
+@rem %msbuild% %prog%.sln -m -p:Configuration="%reldeb%";RuntimeIdentifier=win-x64 -verbosity:minimal  -detailedSummary:True /restore
+set blddir=bin\%reldeb%\net9.0-windows\win-x64\publish
 set exe=%blddir%\%prog%.exe
 
 @echo.

@@ -1,13 +1,12 @@
 ﻿using System;
-using System.Data;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.IO.Compression;
-using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Windows.Forms;
+using System.Collections.Generic;
 
 namespace ColorMatrix_ns {
 	public partial class MainForm : Form {
@@ -79,17 +78,18 @@ namespace ColorMatrix_ns {
 
 				// Load filters on disk.
 				DirectoryInfo dirInfo = new DirectoryInfo(loadFilterDialog.InitialDirectory);
+				// TODO - have the .xml changed to .bin ?
 				foreach (FileInfo fileInfo in dirInfo.GetFiles("*.xml")) {
 					LoadFilterGridFlow(fileInfo.FullName);
 				}
 			} catch (Exception ex) {
-				// MessageBox.Show(ex.Message);
+				MessageBox.Show("Load filters " + ex.Message);
 			}
 		}
 
 
 		float[][] m_f2Array;                // Array to store color matrix cell values
-		DataTable m_dt;                     // DataTable used to manipulate Grid values.
+		// DataTable removed - store matrices as float[][] in filter.Source
 		Microsoft.Win32.RegistryKey regKey; // Our registry key section
 
 		/// <summary>
@@ -122,7 +122,7 @@ namespace ColorMatrix_ns {
 
 		/// <summary>
 		/// Load embedded compressed filters.
-		/// zip file with one folder per filter containing label.txt, table.xml, optional image.png
+		/// zip file with one folder per filter containing label.txt, table.bin, optional image.png
 		/// </summary>
 		private void LoadCompressedFilters(Stream fileStream) {
 			if (fileStream == null)
@@ -137,41 +137,80 @@ namespace ColorMatrix_ns {
 			try {
 				using var archive = new ZipArchive(ms, ZipArchiveMode.Read, leaveOpen: false);
 
-				// Group entries by top-level folder name (e.g. "filter0/")
-				var groups = archive.Entries
-					.Where(e => !string.IsNullOrEmpty(e.FullName))
-					.GroupBy(e => e.FullName.Split(new[] { '/' }, 2)[0]);
+				// Group entries by top-level folder name (e.g. "filter0/") without LINQ.
+				var groups = new Dictionary<string, List<ZipArchiveEntry>>(StringComparer.OrdinalIgnoreCase);
+				foreach (var entry in archive.Entries) {
+					if (string.IsNullOrEmpty(entry.FullName))
+						continue;
+					string top = entry.FullName;
+					int idx = top.IndexOf('/');
+					if (idx >= 0)
+						top = top.Substring(0, idx + 1); // keep trailing slash so folders compare consistently
+					else
+						top = top; // single file at root
 
-				foreach (var group in groups) {
+					if (!groups.TryGetValue(top, out var list)) {
+						list = new List<ZipArchiveEntry>();
+						groups[top] = list;
+					}
+					list.Add(entry);
+				}
+
+				foreach (var pair in groups) {
 					try {
 						string label = null;
-						DataTable dt = null;
+						float[][] table = null;
 						Image image = null;
 
-						foreach (var entry in group) {
+						foreach (var entry in pair.Value) {
 							string name = entry.FullName;
 							if (name.EndsWith("label.txt", StringComparison.OrdinalIgnoreCase)) {
 								using var s = entry.Open();
 								using var sr = new StreamReader(s, Encoding.UTF8);
 								label = sr.ReadToEnd();
-							} else if (name.EndsWith("table.xml", StringComparison.OrdinalIgnoreCase)) {
-								dt = new DataTable();
+							} else if (name.EndsWith("table.bin", StringComparison.OrdinalIgnoreCase)) {
+								// binary table: 25 float32 values in row-major order
 								using var s = entry.Open();
-								dt.ReadXml(s);
+								using var br = new BinaryReader(s, Encoding.UTF8, leaveOpen: true);
+								var values = new float[25];
+								for (int i = 0; i < 25; i++) {
+									values[i] = br.ReadSingle();
+								}
+								table = new float[5][];
+								for (int r = 0; r < 5; r++) {
+									table[r] = new float[5];
+									for (int c = 0; c < 5; c++)
+										table[r][c] = values[r * 5 + c];
+								}
+							} else if (name.EndsWith("table.csv", StringComparison.OrdinalIgnoreCase) || name.EndsWith("table.txt", StringComparison.OrdinalIgnoreCase)) {
+								using var s = entry.Open();
+								using var sr = new StreamReader(s, Encoding.UTF8);
+								string text = sr.ReadToEnd();
+								var vals = ParseFloatsFromText(text);
+								if (vals != null && vals.Length >= 25) {
+									table = new float[5][];
+									for (int r = 0; r < 5; r++) {
+										table[r] = new float[5];
+										for (int c = 0; c < 5; c++)
+											table[r][c] = vals[r * 5 + c];
+									}
+								}
 							} else if (name.EndsWith("image.png", StringComparison.OrdinalIgnoreCase) || name.EndsWith("image.jpg", StringComparison.OrdinalIgnoreCase) || name.EndsWith("image.jpeg", StringComparison.OrdinalIgnoreCase)) {
 								using var s = entry.Open();
 								image = Image.FromStream(s);
 							}
 
-							if (label != null && dt != null && image != null) {
+							// If we have complete set, create FilterGrid right away
+							if (label != null && table != null) {
 								FilterGrid fg = new FilterGrid(label, Color.LightBlue);
 								fg.GridView.ReadOnly = true;
-								fg.Source = dt;
-								fg.Image = image;
+								fg.Source = table;
+								ApplyMatrixToGridView(fg.GridView, table);
+								if (image != null) fg.Image = image;
 								fg.clickEvent += new System.EventHandler(GridSelectionChanged);
 								this.filterFlow.Controls.Add(fg);
 								label = null;
-								dt = null;
+								table = null;
 								image = null;
 							}
 						}
@@ -186,30 +225,54 @@ namespace ColorMatrix_ns {
 				MessageBox.Show("Load filters " + ex.Message);
 			}
 
-			// Legacy: attempt to treat stream as a GZip of a simple length-prefixed sequence (label, xml table, png image)
-			// This is not compatible with BinaryFormatter and is only attempted if zip open fails.
+			// Legacy: attempt to treat stream as a GZip of a simple length-prefixed sequence (label, simple table, image)
+			// New format: after label length (int32) then table format marker (1 byte): 0=binary (25 floats), 1=csv/text, then content, then image length + image bytes.
 			try {
 				ms.Position = 0;
 				using var gzip = new GZipStream(ms, CompressionMode.Decompress, leaveOpen: true);
 				using var reader = new BinaryReader(gzip, Encoding.UTF8, leaveOpen: true);
 
-				while (gzip.CanRead) {
-					// read label length (int32)
+				while (true) {
 					int labelLen;
 					try { labelLen = reader.ReadInt32(); } catch { break; }
 					if (labelLen <= 0) break;
 					var labelBytes = reader.ReadBytes(labelLen);
 					string label = Encoding.UTF8.GetString(labelBytes);
 
-					// read xml length and content
-					int xmlLen = reader.ReadInt32();
-					var xmlBytes = reader.ReadBytes(xmlLen);
-					DataTable dt = new DataTable();
-					using (var xmlMs = new MemoryStream(xmlBytes)) {
-						dt.ReadXml(xmlMs);
+					// read table format marker and payload
+					int tableFormat = 0;
+					try { tableFormat = reader.ReadInt32(); } catch { break; }
+					float[][] table = null;
+
+					if (tableFormat == 0) {
+						// binary: 25 floats
+						var values = new float[25];
+						for (int i = 0; i < 25; i++) values[i] = reader.ReadSingle();
+						table = new float[5][];
+						for (int r = 0; r < 5; r++) {
+							table[r] = new float[5];
+							for (int c = 0; c < 5; c++) table[r][c] = values[r * 5 + c];
+						}
+					} else if (tableFormat == 1) {
+						// csv/text length + text
+						int textLen = reader.ReadInt32();
+						var textBytes = reader.ReadBytes(textLen);
+						string text = Encoding.UTF8.GetString(textBytes);
+						var vals = ParseFloatsFromText(text);
+						if (vals != null && vals.Length >= 25) {
+							table = new float[5][];
+							for (int r = 0; r < 5; r++) {
+								table[r] = new float[5];
+								for (int c = 0; c < 5; c++) table[r][c] = vals[r * 5 + c];
+							}
+						}
+					} else {
+						// unknown format, try to read an xml length and skip
+						int xmlLen = reader.ReadInt32();
+						reader.ReadBytes(xmlLen);
 					}
 
-					// read image length and image bytes
+					// read image
 					int imgLen = reader.ReadInt32();
 					Image image = null;
 					if (imgLen > 0) {
@@ -218,16 +281,46 @@ namespace ColorMatrix_ns {
 						image = Image.FromStream(imgMs);
 					}
 
-					FilterGrid fg = new FilterGrid(label, Color.LightBlue);
-					fg.GridView.ReadOnly = true;
-					fg.Source = dt;
-					if (image != null) fg.Image = image;
-					fg.clickEvent += new System.EventHandler(GridSelectionChanged);
-					this.filterFlow.Controls.Add(fg);
+					if (table != null) {
+						FilterGrid fg = new FilterGrid(label, Color.LightBlue);
+						fg.GridView.ReadOnly = true;
+						fg.Source = table;
+						ApplyMatrixToGridView(fg.GridView, table);
+						if (image != null) fg.Image = image;
+						fg.clickEvent += new System.EventHandler(GridSelectionChanged);
+						this.filterFlow.Controls.Add(fg);
+					}
 				}
 			} catch {
 				// give up on unknown format
 			}
+		}
+
+		// Helper: simple float parser that extracts float tokens from arbitrary text (CSV, XML or plain text)
+		private static float[] ParseFloatsFromText(string text) {
+			if (string.IsNullOrEmpty(text)) return null;
+			var list = new List<float>();
+			int len = text.Length;
+			var sb = new StringBuilder();
+			for (int i = 0; i < len; i++) {
+				char ch = text[i];
+				if ((ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || ch == 'e' || ch == 'E' || ch == '+') {
+					sb.Append(ch);
+				} else {
+					if (sb.Length > 0) {
+						if (float.TryParse(sb.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float f))
+							list.Add(f);
+						sb.Clear();
+					}
+				}
+			}
+			if (sb.Length > 0) {
+				if (float.TryParse(sb.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float f))
+					list.Add(f);
+			}
+
+			if (list.Count == 0) return null;
+			return list.ToArray();
 		}
 
 		/// <summary>
@@ -241,40 +334,49 @@ namespace ColorMatrix_ns {
 			// create matrix that will brighten and contrast the image
 			m_f2Array = new float[][] {
 					new float[] {contrast, 0, 0, 0, 0}, // scale red
-                    new float[] {0, contrast, 0, 0, 0}, // scale green
-                    new float[] {0, 0, contrast, 0, 0}, // scale blue
-                    new float[] {0, 0, 0, 1.0f, 0},     // don't scale alpha
-                    new float[] {adjBrightness, adjBrightness, adjBrightness, 0, 1}};
+					new float[] {0, contrast, 0, 0, 0}, // scale green
+					new float[] {0, 0, contrast, 0, 0}, // scale blue
+					new float[] {0, 0, 0, 1.0f, 0},     // don't scale alpha
+					new float[] {adjBrightness, adjBrightness, adjBrightness, 0, 1}};
 
-			// dataGridView.Rows.Clear();
-			// dataGridView.Columns.Clear();
-			// dataGridView.DataBindings.Clear();
-			m_dt = Fill(new DataTable("dt"), m_f2Array);
-			filterGrid.Source = m_dt;
+			// Set filter grid source to a copy of the matrix and populate its GridView
+			var src = CloneMatrix(m_f2Array);
+			filterGrid.Source = src;
+			ApplyMatrixToGridView(filterGrid.GridView, src);
 		}
 
-		/// <summary>
-		/// Fill DataGridView table with values from float array.
-		/// </summary>
-		/// <param name="dt">Output Table</param>
-		/// <param name="f2Array">Input 5x5 float array</param>
-		/// <returns></returns>
-		private DataTable Fill(DataTable dt, float[][] f2Array) {
-			dt.Columns.Add("Red", typeof(float));
-			dt.Columns.Add("Green", typeof(float));
-			dt.Columns.Add("Blue", typeof(float));
-			dt.Columns.Add("Alpha", typeof(float));
-			dt.Columns.Add("Int", typeof(float));
-
-			foreach (float[] fRow in f2Array) {
-				DataRow dRow = dt.NewRow();
-				for (int col = 0; col < fRow.Length; col++)
-					dRow[col] = fRow[col];
-				dt.Rows.Add(dRow);
+		// Clone matrix helper
+		private static float[][] CloneMatrix(float[][] src) {
+			var dst = new float[src.Length][];
+			for (int r = 0; r < src.Length; r++) {
+				dst[r] = new float[src[r].Length];
+				Array.Copy(src[r], dst[r], src[r].Length);
 			}
+			return dst;
+		}
 
-			dt.AcceptChanges();
-			return dt;
+		// Populate a DataGridView with 5x5 float matrix
+		private void ApplyMatrixToGridView(DataGridView dgv, float[][] table) {
+			dgv.SuspendLayout();
+
+			// Ensure grid is unbound before manipulating rows/columns
+			dgv.DataSource = null;
+
+			dgv.Columns.Clear();
+			dgv.Rows.Clear();
+			dgv.AllowUserToAddRows = false;
+			string[] names = { "Red", "Green", "Blue", "Alpha", "Int" };
+			for (int c = 0; c < 5; c++) {
+				dgv.Columns.Add(names[c], names[c]);
+			}
+			for (int r = 0; r < 5; r++) {
+				int idx = dgv.Rows.Add();
+				for (int c = 0; c < 5; c++) {
+					dgv.Rows[idx].Cells[c].Value = table[r][c];
+				}
+			}
+			dgv.ResumeLayout();
+			ResizeColumns(dgv);
 		}
 
 		private void applyBtn_Click(object sender, EventArgs e) {
@@ -311,9 +413,30 @@ namespace ColorMatrix_ns {
 		}
 
 		private void DrawImage(Graphics g, Image image) {
-			m_dt = (DataTable)filterGrid.Source;
-			for (int r = 0; r < m_f2Array.Length; r++) {
-				m_dt.Rows[r].ItemArray.CopyTo(m_f2Array[r], 0);
+			// Get matrix from filterGrid.Source (float[][]) or fall back to GridView values or default m_f2Array
+			float[][] src = filterGrid.Source as float[][];
+			if (src == null) {
+				// try to read GridView directly
+				var dgv = filterGrid.GridView;
+				if (dgv != null && dgv.Rows.Count >= 5 && dgv.ColumnCount >= 5) {
+					src = new float[5][];
+					for (int r = 0; r < 5; r++) {
+						src[r] = new float[5];
+						for (int c = 0; c < 5; c++) {
+							object v = dgv.Rows[r].Cells[c].Value;
+							src[r][c] = (v == null) ? 0f : Convert.ToSingle(v);
+						}
+					}
+				} else {
+					src = CloneMatrix(m_f2Array);
+				}
+			}
+
+			// copy src into m_f2Array used by ColorMatrix
+			for (int r = 0; r < Math.Min(m_f2Array.Length, src.Length); r++) {
+				for (int c = 0; c < Math.Min(m_f2Array[r].Length, src[r].Length); c++) {
+					m_f2Array[r][c] = src[r][c];
+				}
 			}
 
 			float gamma = 1.0f;         // no change in gamma
@@ -404,7 +527,23 @@ namespace ColorMatrix_ns {
 			if (saveFilterDialog.ShowDialog() == DialogResult.OK) {
 				try {
 					string filename = saveFilterDialog.FileName;
-					m_dt.WriteXml(filename, XmlWriteMode.WriteSchema);
+					// write binary .bin with 25 floats
+					using (var fs = File.Open(filename, FileMode.Create, FileAccess.Write)) {
+						using var bw = new BinaryWriter(fs, Encoding.UTF8, leaveOpen: false);
+						// try Source first
+						var src = filterGrid.Source as float[][];
+						if (src != null) {
+							for (int r = 0; r < 5; r++) for (int c = 0; c < 5; c++) bw.Write(src[r][c]);
+						} else {
+							// fallback to GridView values
+							var dgv = filterGrid.GridView;
+							for (int r = 0; r < 5; r++) for (int c = 0; c < 5; c++) {
+								object v = dgv.Rows[r].Cells[c].Value;
+								bw.Write((v == null) ? 0f : Convert.ToSingle(v));
+							}
+						}
+					}
+					// save image
 					ipanel3.Image.Save(Path.ChangeExtension(filename, ".png"));
 				} catch (Exception ex) {
 					MessageBox.Show("Save filter " + ex.Message);
@@ -427,10 +566,23 @@ namespace ColorMatrix_ns {
 
 		private void GridSelectionChanged(object obj, EventArgs e) {
 			FilterGrid activeFg = (FilterGrid)obj;
-			DataTable dt = (DataTable)activeFg.Source;
-			this.filterGrid.Source = dt.Copy();
+			var src = activeFg.Source as float[][];
+			if (src != null) {
+				this.filterGrid.Source = CloneMatrix(src);
+				ApplyMatrixToGridView(this.filterGrid.GridView, (float[][])this.filterGrid.Source);
+			}
 			this.filterGrid.Label = activeFg.Label;
-			this.filterGrid.Image = new Bitmap(activeFg.Image);
+
+			// Dispose previous image to avoid GDI leaks, then safely clone if available
+			var prev = this.filterGrid.Image;
+			if (prev != null) {
+				try { prev.Dispose(); } catch { }
+			}
+
+			if (activeFg.Image != null)
+				this.filterGrid.Image = new Bitmap(activeFg.Image);
+			else
+				this.filterGrid.Image = null;
 
 			ApplyFilter();
 		}
@@ -485,20 +637,34 @@ namespace ColorMatrix_ns {
 		private FilterGrid LoadFilterGrid(string filename) {
 			FilterGrid fg = null;
 			try {
-				DataTable dt = new DataTable();
-				dt.ReadXml(filename);
+				// Prefer a companion binary file (.bin) containing 25 floats in row-major order.
+				string binFile = Path.ChangeExtension(filename, ".bin");
+				if (File.Exists(binFile)) {
+					float[][] table = new float[5][];
+					using (var fs = File.OpenRead(binFile)) {
+						using var br = new BinaryReader(fs, Encoding.UTF8, leaveOpen: false);
+						var values = new float[25];
+						for (int i = 0; i < 25; i++) {
+							values[i] = br.ReadSingle();
+						}
+						for (int r = 0; r < 5; r++) {
+							table[r] = new float[5];
+							for (int c = 0; c < 5; c++)
+								table[r][c] = values[r * 5 + c];
+						}
+					}
 
-				fg = new FilterGrid(Path.GetFileName(filename), Color.LightBlue);
-				fg.Source = dt;
+					fg = new FilterGrid(Path.GetFileName(filename), Color.LightBlue);
+					fg.Source = table;
+					ApplyMatrixToGridView(fg.GridView, table);
 
-				try {
-					Image image = Bitmap.FromFile(Path.ChangeExtension(filename, ".png"));
-					fg.Image = image;
-				} catch (Exception ex) {
-					MessageBox.Show("Load filter image " + ex.Message);
+					try {
+						Image image = Bitmap.FromFile(Path.ChangeExtension(filename, ".png"));
+						fg.Image = image;
+					} catch (Exception) { }
 				}
-			} catch /* (Exception ex) */ {
-				// MessageBox.Show("Load filter grid " + ex.Message);
+			} catch {
+				// ignore errors
 			}
 
 			return fg;
@@ -514,7 +680,7 @@ namespace ColorMatrix_ns {
 			if (saveFilterDialog.ShowDialog() == DialogResult.OK) {
 				// Create a ZIP archive with one folder per filter. Each folder contains:
 				// - label.txt (UTF8)
-				// - table.xml (DataTable.WriteXml schema + data)
+				// - table.bin (25 floats, row-major)
 				// - image.png (optional)
 				using (var fs = File.Open(saveFilterDialog.FileName, FileMode.Create, FileAccess.Write))
 				using (var archive = new ZipArchive(fs, ZipArchiveMode.Create, leaveOpen: false)) {
@@ -530,16 +696,30 @@ namespace ColorMatrix_ns {
 								sw.Write(fg.Label ?? string.Empty);
 							}
 
-							// table
-							var tableEntry = archive.CreateEntry(folder + "table.xml", CompressionLevel.Optimal);
-							using (var s = tableEntry.Open()) {
-								if (fg.Source is DataTable dt) {
-									dt.WriteXml(s, XmlWriteMode.WriteSchema);
+							// table (binary: 25 floats in row-major order)
+							var tableEntry = archive.CreateEntry(folder + "table.bin", CompressionLevel.Optimal);
+							using (var s = tableEntry.Open())
+							using (var bw = new BinaryWriter(s, Encoding.UTF8, leaveOpen: false)) {
+								// Prefer float[][] source
+								var mat = fg.Source as float[][];
+								if (mat != null) {
+									for (int r = 0; r < 5; r++) {
+										for (int c = 0; c < 5; c++) bw.Write(mat[r][c]);
+									}
 								} else {
+									// Attempt to get values from the grid view
 									try {
-										var dt2 = fg.Source as DataTable;
-										dt2?.WriteXml(s, XmlWriteMode.WriteSchema);
-									} catch { }
+										var dgv = fg.GridView;
+										for (int r = 0; r < 5; r++) {
+											for (int c = 0; c < 5; c++) {
+												object v = dgv.Rows[r].Cells[c].Value;
+												float f = Convert.ToSingle(v);
+												bw.Write(f);
+											}
+										}
+									} catch {
+										for (int k = 0; k < 25; k++) bw.Write((k == 0 || k == 6 || k == 12 || k == 18 || k == 24) ? 1f : 0f);
+									}
 								}
 							}
 
@@ -557,127 +737,127 @@ namespace ColorMatrix_ns {
 			}
 		}
 
-		private void LoadCompressedFiltersBtn_Click(object sender, EventArgs e) {
-			if (loadFilterDialog.ShowDialog() == DialogResult.OK) {
-				using var fileStream = File.OpenRead(loadFilterDialog.FileName);
-				LoadCompressedFilters(fileStream);
-			}
-		}
-		#endregion
-
-		/// Collection of mouse handles to support moving & resizing of our custom frameless dialog.
-		#region ==== Move Drag
-
-		Point lastLoc = Point.Empty;
-		private void MouseLeave_Click(object sender, EventArgs e) {
-			this.Cursor = Cursors.Default;
-			mainPanel.Visible = true;
-		}
-
-		private void MouseEnter_Click(object sender, EventArgs e) {
-			this.Cursor = Cursors.Cross;
-			lastLoc = Point.Empty;
-		}
-
-		private void MouseMove_Click(object sender, MouseEventArgs e) {
-			if (e.Button == MouseButtons.Left) {
-				Point mouseLoc = System.Windows.Forms.Control.MousePosition;
-
-				if (lastLoc != Point.Empty) {
-					Point delta = new Point(mouseLoc.X - lastLoc.X, mouseLoc.Y - lastLoc.Y);
-					if (Math.Abs(delta.X) < 5 && Math.Abs(delta.Y) < 5)
-						return;
-					this.Location = new Point(Location.X + delta.X, Location.Y + delta.Y);
+			private void LoadCompressedFiltersBtn_Click(object sender, EventArgs e) {
+				if (loadFilterDialog.ShowDialog() == DialogResult.OK) {
+					using var fileStream = File.OpenRead(loadFilterDialog.FileName);
+					LoadCompressedFilters(fileStream);
 				}
-				lastLoc = mouseLoc;
-				return;
+			}
+			#endregion
+
+			/// Collection of mouse handles to support moving & resizing of our custom frameless dialog.
+			#region ==== Move Drag
+
+			Point lastLoc = Point.Empty;
+			private void MouseLeave_Click(object sender, EventArgs e) {
+				this.Cursor = Cursors.Default;
+				mainPanel.Visible = true;
 			}
 
-			lastLoc = Point.Empty;
-		}
-
-		private void MouseSizeEnter_Click(object sender, EventArgs e) {
-			string corner = (string)((Panel)sender).Tag;
-			switch (corner) {
-				case "upperright":
-				case "lowerleft":
-					this.Cursor = Cursors.SizeNESW;
-					break;
-				case "upperleft":
-				case "lowerright":
-					this.Cursor = Cursors.SizeNWSE;
-					break;
+			private void MouseEnter_Click(object sender, EventArgs e) {
+				this.Cursor = Cursors.Cross;
+				lastLoc = Point.Empty;
 			}
 
-			lastLoc = Point.Empty;
-		}
+			private void MouseMove_Click(object sender, MouseEventArgs e) {
+				if (e.Button == MouseButtons.Left) {
+					Point mouseLoc = System.Windows.Forms.Control.MousePosition;
 
-		Point delta = Point.Empty;
-		private void MouseSizeMove_Click(object sender, MouseEventArgs e) {
-			if (e.Button == MouseButtons.Left) {
-				Point mouseLoc = System.Windows.Forms.Control.MousePosition;
-
-				if (lastLoc != Point.Empty) {
-					delta = new Point(mouseLoc.X - lastLoc.X, mouseLoc.Y - lastLoc.Y);
-					if (Math.Abs(delta.X) < 5 && Math.Abs(delta.Y) < 5)
-						return;
-					string corner = (string)((Panel)sender).Tag;
-					switch (corner) {
-						case "upperright":
-							this.Size = new Size(this.Width + delta.X, this.Height - delta.Y);
-							this.Location = new Point(Location.X, Location.Y + delta.Y);
-							break;
-						case "lowerleft":
-							this.Size = new Size(this.Width - delta.X, this.Height + delta.Y);
-							this.Location = new Point(Location.X + delta.X, Location.Y);
-							break;
-						case "upperleft":
-							this.Size = new Size(this.Width - delta.X, this.Height - delta.Y);
-							this.Location = new Point(Location.X + delta.X, Location.Y + delta.Y);
-							break;
-						case "lowerright":
-							this.Size = new Size(this.Width + delta.X, this.Height + delta.Y);
-							break;
+					if (lastLoc != Point.Empty) {
+						Point delta = new Point(mouseLoc.X - lastLoc.X, mouseLoc.Y - lastLoc.Y);
+						if (Math.Abs(delta.X) < 5 && Math.Abs(delta.Y) < 5)
+							return;
+						this.Location = new Point(Location.X + delta.X, Location.Y + delta.Y);
 					}
+					lastLoc = mouseLoc;
+					return;
 				}
-				lastLoc = mouseLoc;
-				mainPanel.Visible = false;
-				return;
+
+				lastLoc = Point.Empty;
 			}
 
-			mainPanel.Visible = true;
-			delta = Point.Empty;
-			lastLoc = Point.Empty;
-		}
-		#endregion
+			private void MouseSizeEnter_Click(object sender, EventArgs e) {
+				string corner = (string)((Panel)sender).Tag;
+				switch (corner) {
+					case "upperright":
+					case "lowerleft":
+						this.Cursor = Cursors.SizeNESW;
+						break;
+					case "upperleft":
+					case "lowerright":
+						this.Cursor = Cursors.SizeNWSE;
+						break;
+				}
 
-		#region ==== About and Help Dialog
-		AboutDialog about;
-		private void aboutBtn_Click(object sender, EventArgs e) {
-			if (about != null)
-				about.Dispose();
-			about = new AboutDialog();
-			about.Show();
-		}
+				lastLoc = Point.Empty;
+			}
 
-		HelpDialog helpDialog;
-		private void helpBtn_Click(object sender, EventArgs e) {
-			if (helpDialog == null)
-				helpDialog = new HelpDialog();
+			Point delta = Point.Empty;
+			private void MouseSizeMove_Click(object sender, MouseEventArgs e) {
+				if (e.Button == MouseButtons.Left) {
+					Point mouseLoc = System.Windows.Forms.Control.MousePosition;
 
-			this.helpDialog.Show();
-		}
-		#endregion
+					if (lastLoc != Point.Empty) {
+						delta = new Point(mouseLoc.X - lastLoc.X, mouseLoc.Y - lastLoc.Y);
+						if (Math.Abs(delta.X) < 5 && Math.Abs(delta.Y) < 5)
+							return;
+						string corner = (string)((Panel)sender).Tag;
+						switch (corner) {
+							case "upperright":
+								this.Size = new Size(this.Width + delta.X, this.Height - delta.Y);
+								this.Location = new Point(Location.X, Location.Y + delta.Y);
+								break;
+							case "lowerleft":
+								this.Size = new Size(this.Width - delta.X, this.Height + delta.Y);
+								this.Location = new Point(Location.X + delta.X, Location.Y);
+								break;
+							case "upperleft":
+								this.Size = new Size(this.Width - delta.X, this.Height - delta.Y);
+								this.Location = new Point(Location.X + delta.X, Location.Y + delta.Y);
+								break;
+							case "lowerright":
+								this.Size = new Size(this.Width + delta.X, this.Height + delta.Y);
+								break;
+						}
+					}
+					lastLoc = mouseLoc;
+					mainPanel.Visible = false;
+					return;
+				}
 
-		private void minIcon_Click(object sender, EventArgs e) {
-			this.WindowState = FormWindowState.Minimized;
-		}
+				mainPanel.Visible = true;
+				delta = Point.Empty;
+				lastLoc = Point.Empty;
+			}
+			#endregion
 
-		private void maxIcon_Click(object sender, EventArgs e) {
-			this.WindowState =
-				(this.WindowState == FormWindowState.Maximized) ?
-				FormWindowState.Normal :
-				FormWindowState.Maximized;
+			#region ==== About and Help Dialog
+			AboutDialog about;
+			private void aboutBtn_Click(object sender, EventArgs e) {
+				if (about != null)
+					about.Dispose();
+				about = new AboutDialog();
+				about.Show();
+			}
+
+			HelpDialog helpDialog;
+			private void helpBtn_Click(object sender, EventArgs e) {
+				if (helpDialog == null)
+					helpDialog = new HelpDialog();
+
+				this.helpDialog.Show();
+			}
+			#endregion
+
+			private void minIcon_Click(object sender, EventArgs e) {
+				this.WindowState = FormWindowState.Minimized;
+			}
+
+			private void maxIcon_Click(object sender, EventArgs e) {
+				this.WindowState =
+					(this.WindowState == FormWindowState.Maximized) ?
+					FormWindowState.Normal :
+					FormWindowState.Maximized;
+			}
 		}
-	}
 }
